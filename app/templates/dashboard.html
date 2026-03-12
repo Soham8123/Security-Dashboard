@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Security Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+
+    header {
+      background: #161b22;
+      padding: 16px 32px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      font-size: 20px;
+      color: #58a6ff;
+    }
+
+    #last-updated {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .container { padding: 24px 32px; }
+
+    /* ── Stat Cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .card h3 { font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+    .card .number { font-size: 36px; font-weight: bold; }
+
+    .critical { color: #ff4444; }
+    .high     { color: #ff8800; }
+    .medium   { color: #ffcc00; }
+    .low      { color: #00cc88; }
+
+    /* ── Charts + Table Layout ── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .panel h2 {
+      font-size: 15px;
+      color: #58a6ff;
+      margin-bottom: 16px;
+    }
+
+    /* ── Events Table ── */
+    .table-panel {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .table-panel h2 {
+      font-size: 15px;
+      color: #58a6ff;
+      margin-bottom: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      background: #21262d;
+      padding: 10px 14px;
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    tr:hover td { background: #1c2128; }
+
+    .badge {
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .badge.CRITICAL { background: #3d0000; color: #ff4444; }
+    .badge.HIGH     { background: #2d1a00; color: #ff8800; }
+    .badge.MEDIUM   { background: #2d2600; color: #ffcc00; }
+    .badge.LOW      { background: #002d1a; color: #00cc88; }
+
+    /* ── Refresh Button ── */
+    .refresh-btn {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .refresh-btn:hover { background: #2ea043; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🛡️ Real-Time Cloud Security Dashboard</h1>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <span id="last-updated">Loading...</span>
+    <button class="refresh-btn" onclick="loadAll()">⟳ Refresh</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stat Cards -->
+  <div class="cards">
+    <div class="card">
+      <h3>CRITICAL</h3>
+      <div class="number critical" id="count-critical">0</div>
+    </div>
+    <div class="card">
+      <h3>HIGH</h3>
+      <div class="number high" id="count-high">0</div>
+    </div>
+    <div class="card">
+      <h3>MEDIUM</h3>
+      <div class="number medium" id="count-medium">0</div>
+    </div>
+    <div class="card">
+      <h3>LOW</h3>
+      <div class="number low" id="count-low">0</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid">
+    <div class="panel">
+      <h2>📊 Events by Severity</h2>
+      <canvas id="severityChart"></canvas>
+    </div>
+    <div class="panel">
+      <h2>📈 Event Types</h2>
+      <canvas id="typeChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Events Table -->
+  <div class="table-panel">
+    <h2>🔔 Latest Security Events</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Time</th>
+          <th>Event Type</th>
+          <th>Severity</th>
+          <th>Source IP</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody id="events-table">
+        <tr><td colspan="6" style="text-align:center; color:#8b949e;">
+          Loading events...
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  let severityChart, typeChart;
+
+  async function loadStats() {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    const stats = data.stats;
+
+    const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    stats.forEach(s => { if (counts[s.severity] !== undefined) counts[s.severity] = s.count; });
+
+    document.getElementById('count-critical').textContent = counts.CRITICAL;
+    document.getElementById('count-high').textContent     = counts.HIGH;
+    document.getElementById('count-medium').textContent   = counts.MEDIUM;
+    document.getElementById('count-low').textContent      = counts.LOW;
+
+    // Severity Doughnut Chart
+    const sCtx = document.getElementById('severityChart').getContext('2d');
+    if (severityChart) severityChart.destroy();
+    severityChart = new Chart(sCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
+        datasets: [{
+          data: [counts.CRITICAL, counts.HIGH, counts.MEDIUM, counts.LOW],
+          backgroundColor: ['#ff4444', '#ff8800', '#ffcc00', '#00cc88'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        plugins: { legend: { labels: { color: '#e6edf3' } } }
+      }
+    });
+  }
+
+  async function loadEvents() {
+    const res = await fetch('/api/events');
+    const data = await res.json();
+    const events = data.events;
+
+    const tbody = document.getElementById('events-table');
+
+    if (events.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#8b949e;">No events yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = events.map((e, i) => `
+      <tr>
+        <td style="color:#8b949e">${i + 1}</td>
+        <td style="color:#8b949e">${new Date(e.created_at).toLocaleString()}</td>
+        <td>${e.event_type}</td>
+        <td><span class="badge ${e.severity}">${e.severity}</span></td>
+        <td style="color:#79c0ff">${e.source_ip || 'N/A'}</td>
+        <td style="color:#8b949e">${e.description}</td>
+      </tr>
+    `).join('');
+
+    // Event Types Bar Chart
+    const typeCounts = {};
+    events.forEach(e => { typeCounts[e.event_type] = (typeCounts[e.event_type] || 0) + 1; });
+
+    const tCtx = document.getElementById('typeChart').getContext('2d');
+    if (typeChart) typeChart.destroy();
+    typeChart = new Chart(tCtx, {
+      type: 'bar',
+      data: {
+        labels: Object.keys(typeCounts),
+        datasets: [{
+          label: 'Count',
+          data: Object.values(typeCounts),
+          backgroundColor: '#58a6ff',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+        }
+      }
+    });
+  }
+
+  function loadAll() {
+    loadStats();
+    loadEvents();
+    document.getElementById('last-updated').textContent =
+      'Last updated: ' + new Date().toLocaleTimeString();
+  }
+
+  // Load on start, then auto-refresh every 30 seconds
+  loadAll();
+  setInterval(loadAll, 30000);
+</script>
+
+</body>
+</html>

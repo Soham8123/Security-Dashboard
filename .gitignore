@@ -1,0 +1,11 @@
+```
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+logs/
+*.json
+.vscode/
+*.pem
+*.key
